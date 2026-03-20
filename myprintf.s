@@ -3,19 +3,22 @@ section     .text
 global _start
 
 _start:
+            push 66d
             push 65d
             mov r9, 65d
             mov r8, 65d
             mov rcx, 65d     
             mov rdx, 65d                        ; arguments for MyPrintf in reverse order
             mov rsi, TestString
-            mov rdi, String                     ;
+            mov rdi, String
 
             call MyPrintf
 
             mov rax, 0x3C                       ; syscall number for exit
             xor rdi, rdi                        ; exit code = 0
             syscall                             ; call kernel
+
+global MyPrintf
     
 MyPrintf:
             push rbx
@@ -27,7 +30,7 @@ MyPrintf:
             xor r12, r12                    ; to use as a pointer on current argument
             xor r13, r13                    ; to use as OutputBuff counter
             mov rbp, rsp
-            add rbp, 5 * 8d                 ; where arguments starts
+            add rbp, 5 * 8d                 ; where arguments start
 
             call CalcLength
             mov rcx, rax
@@ -35,15 +38,13 @@ MyPrintf:
         FindSpcf:
             cmp byte [rdi], '%'             ; looking for specifier            
             jne NoSpcf                      ; if no '%' -> print sym
-            call OutpTheRest
             call PrintSpcf                  ; else -> analyse specifier 
             inc r12
             jmp NextSym
 
         NoSpcf:
-            call PrintSym
-            ;mov rbx, 1
-            ;call StoreSym
+            ;call PrintSym
+            call StoreSym
 
         NextSym:
             inc rdi                         ; go to the next sym in line
@@ -149,6 +150,8 @@ PrintSpcf:
 PushArg:
             pop rax                         ; save return address
 
+            cmp r12, 5d
+            jge caseMore
             jmp [ArgSwitch + r12 * 8d]
 
         case2:      
@@ -213,14 +216,10 @@ PrintDecimal:
             div rsi
 
             add rax, '0'
-            mov [SymBuff], rax
+            mov [SymBuff], al
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx 
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            call StoreSym
 
             push rdx
             mov rax, rsi
@@ -236,7 +235,7 @@ PrintDecimal:
             pop rsi
             pop rcx                         ; restore the counter
             dec rcx                         ; for loop in MyPrintf
-            pop rax                         ; restore string position
+            pop rdi                         ; restore string position
 
             push rbx                        ; restore return address
             ret
@@ -263,14 +262,10 @@ PrintOctal:
             mov rsi, 1
             add rax, '0'
             
-            mov [SymBuff], rax
+            mov [SymBuff], al
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            call StoreSym
 
         NullFirstBits:
             pop rax
@@ -294,14 +289,10 @@ PrintOctal:
             
         PrintOctBit:
             add rax, '0'
-            mov [SymBuff], rax
+            mov [SymBuff], al
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            call StoreSym
         
         NoOctPrint:
             pop rax
@@ -328,12 +319,9 @@ PrintString:
             mov rdi, rax
 
             call CalcLength
-
-            call PrintSym
-            ;push rbx
-            ;mov rbx, rax 
-            ;call StoreSym
-            ;pop rbx
+            mov qword [string_flag], 1
+            call StoreSym
+            mov qword [string_flag], 0
 
             pop rdi
             pop rdx
@@ -349,15 +337,24 @@ PrintHex:
             pop rax                         ; get the hex value
             push rdi                        ; save string position
             push rcx                        ; save the counter
-            push rsi
+            push rsi                        ; to use as const value
+            push rdx                        
 
+            xor rdx, rdx                    ; to use as a flag
             mov rcx, 16d                    ; num of 4-bit(= one hex num) combinations in a reg
             mov rsi, 0F000000000000000h     ; to use as const value
 
         PrintHalfOfAByte:
             push rax
             and rax, rsi
-            shr rax, 8 * 7d + 4d               ; leave only halh of one byte
+            shr rax, 8 * 7d + 4d            ; leave only halh of one byte
+            cmp rax, 0
+            je NullHexBits
+            mov rdx, 1
+        NullHexBits:
+            cmp rdx, 0
+            je NoHexPrint
+
             cmp rax, 9d
             jg IsLetter
             add rax, '0'
@@ -366,19 +363,17 @@ PrintHex:
         IsLetter:
             add rax, 'A' - 0Ah
         HexIsReady:
-            mov [SymBuff], rax
+            mov [SymBuff], al
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            call StoreSym
 
+        NoHexPrint:
             pop rax
             shl rax, 4d
         loop PrintHalfOfAByte
 
+            pop rdx
             pop rsi
             pop rcx                         ; restore the counter
             dec rcx                         ; for loop in MyPrintf
@@ -391,14 +386,11 @@ PrintChar:
             pop rax                         ; get the char value
             push rdi                        ; save string position
 
-            mov [SymBuff], rax
+            mov [SymBuff], al
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            ;call PrintSym
+            call StoreSym
 
             dec rcx                         ; for loop in MyPrintf                   
 
@@ -437,16 +429,12 @@ PrintBinary:
         IsZero:
             cmp rbx, 0                      ; if there wasn't '1' before, no '0' printing
             je SkipPrint
-            mov byte [SymBuff], '0'          ; put the ASCII to memory  
+            mov byte [SymBuff], '0'         ; put the ASCII to memory  
 
         BitIsSet:                       
             mov rdi, SymBuff
 
-            call PrintSym
-            ;push rbx
-            ;mov rbx, 1
-            ;call StoreSym
-            ;pop rbx
+            call StoreSym
 
         SkipPrint:
         loop PrintOneBit
@@ -457,16 +445,13 @@ PrintBinary:
             ret
 
 OutpTheRest:
-            cmp r13, 0
-            je SkipOutTheRest
-
             push rcx                        ; save the counter
             push rdi                        ; save the arg
             push rsi                        ; save the arg
             push rdx                        ; save the arg
             push rax
 
-            mov rsi, OutputBuff             ; offset of the string ([rdi] = current sym)
+            mov rsi, OutputBuff             ; offset of the string
             mov rax, 0x01                   ; write (rbx, rcx, rdx)
             mov rdi, 1                      ; stdout
             mov rdx, r13                    ; size
@@ -478,79 +463,85 @@ OutpTheRest:
             pop rdi                         ; restore the arg
             pop rcx                         ; restore the counter
 
-            xor r13, r13
-
-        SkipOutTheRest:
             ret
 
-;StoreSym:
-;            push rax
-;            push rcx                        ; save the counter
-;            push rdi                        ; save the arg
-;            push rsi                        ; save the arg
-;            push rdx                        ; save the arg
-;
-;            mov rcx, rbx
-;
-;        StoreAll:
-;            cmp r13, OutBuffSize
-;            jne NoPrintBuff
-;            
-;            push rdi
-;            push rcx
-;            mov rsi, OutputBuff             ; offset of the string 
-;            mov rax, 0x01                   ; write 
-;            mov rdi, 1                      ; stdout
-;            mov rdx, OutBuffSize            ; size
-;            syscall
-;            xor r13, r13
-;            pop rcx
-;            pop rdi
-;
-;        NoPrintBuff:
-;            mov al, [rdi]
-;            mov byte [OutputBuff + r13], al
-;            inc r13
-;            inc rdi
-;        loop StoreAll
-;
-;            pop rdx                         ; restore the arg
-;            pop rsi                         ; restore the arg
-;            pop rdi                         ; restore the arg
-;            pop rcx                         ; restore the counter
-;            pop rax
-;            ret
-
-PrintSym:
+StoreSym:
+            push rax
             push rcx                        ; save the counter
             push rdi                        ; save the arg
             push rsi                        ; save the arg
             push rdx                        ; save the arg
-            push rax
 
-            mov rsi, rdi                    ; offset of the string ([rdi] = current sym)
-            mov rax, 0x01                   ; write (rbx, rcx, rdx)
+            mov rcx, [string_flag]
+            cmp rcx, 1
+            je IsString
+            mov rcx, 1
+            jmp StoreAll
+
+        IsString:
+            mov rcx, rax
+
+        StoreAll:
+            cmp r13, OutBuffSize
+            jne NoPrintBuff
+            
+            push rdi
+            push rcx
+            mov rsi, OutputBuff             ; offset of the string 
+            mov rax, 0x01                   ; write 
             mov rdi, 1                      ; stdout
-            mov rdx, 1                      ; only one symbol
+            mov rdx, OutBuffSize            ; size
             syscall
 
-            pop rax
+            xor r13, r13
+            pop rcx
+            pop rdi
+
+        NoPrintBuff:
+            mov al, [rdi]
+            mov byte [OutputBuff + r13], al
+            inc r13
+            inc rdi
+        loop StoreAll
+
             pop rdx                         ; restore the arg
             pop rsi                         ; restore the arg
             pop rdi                         ; restore the arg
             pop rcx                         ; restore the counter
-
+            pop rax
             ret
+
+;PrintSym:
+;            push rcx                        ; save the counter
+;            push rdi                        ; save the arg
+;            push rsi                        ; save the arg
+;            push rdx                        ; save the arg
+;            push rax
+;
+;            mov rsi, rdi                    ; offset of the string ([rdi] = current sym)
+;            mov rax, 0x01                   ; write (rbx, rcx, rdx)
+;            mov rdi, 1                      ; stdout
+;            mov rdx, 1                      ; only one symbol
+;            syscall
+;
+;            pop rax
+;            pop rdx                         ; restore the arg
+;            pop rsi                         ; restore the arg
+;            pop rdi                         ; restore the arg
+;            pop rcx                         ; restore the counter
+;
+;            ret
         
 section     .data
 
-String:     db "Hello world %s %x %o %b %c %c", 0h 
-Length      equ $ - String
-SymBuff     db 0                            ; reserve 1 byte
-OutBuffSize equ 10
-OutputBuff: db OutBuffSize dup(0)
+String:      db "Hello world abc %s %c %x %o %d %c %c", 0h 
+SymBuff:     db 0                           ; reserve 1 byte
+OutBuffSize: equ 10d
+OutputBuff:  db OutBuffSize dup(0)
   
-TestString: db "TestString123", 0h
+TestString:  db "TestString123", 0h
+TestBuff:    dq 0
+string_flag: db 0
 
 ArgSwitch:
     dq case2
@@ -558,7 +549,6 @@ ArgSwitch:
     dq case4
     dq case5
     dq case6
-    dq caseMore
 
 SpecifierSwitch:
     dq caseB
