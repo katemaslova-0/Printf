@@ -2,21 +2,21 @@ section     .text
 
 global _start
 
-_start:
-            push 66d
-            push 65d
-            mov r9, 65d
-            mov r8, 65d
-            mov rcx, 65d
-            mov rdx, -65d     
-            mov rsi, TestString                   ; arguments for MyPrintf in reverse order
-            mov rdi, String
-
-            call MyPrintf
-
-            mov rax, 0x3C                   ; syscall number for exit
-            xor rdi, rdi                    ; exit code = 0
-            syscall                         ; call kernel
+;_start:
+;            push 66d
+;            push 65d
+;            mov r9, 65d
+;            mov r8, 65d
+;            mov rcx, 65d
+;            mov rdx, -65d     
+;            mov rsi, TestString             ; arguments for MyPrintf in reverse order
+;            mov rdi, String
+;
+;            call MyPrintf
+;
+;            mov rax, 0x3C                   ; syscall number for exit
+;            xor rdi, rdi                    ; exit code = 0
+;            syscall                         ; call kernel
 
 global MyPrintf
     
@@ -59,18 +59,21 @@ MyPrintf:
 
             ret
 
-;================================
-;CalcLength
+;=======================================
+; CalcLength
 ;
-;Expected: string offset in rdi
-;Destroys: -
-;Returns: string length in rax
-;================================
+; Calculates the length of the string
+; stored in rdi and puts it to rax
+;
+; Expected: string address in rdi
+; Destroys: -
+; Returns: string length in rax
+;=====================================
 
 CalcLength:
-            push rbx                        ; save return address
+            push rbx                        ; save rbx value
 
-            mov rbx, rdi                    ; string offset to rbx
+            mov rbx, rdi                    ; string address to rbx
             xor rax, rax                    ; to use as a counter
 
         .CheckSym:                          ; looking for '\0' symbol
@@ -81,16 +84,19 @@ CalcLength:
         jmp .CheckSym
 
         EndOfLine:
-            pop rbx                         ; restore return address
+            pop rbx                         ; restore rbx value
             ret
 
-;================================
-;PrintSpcf
+;============================================
+; PrintSpcf
 ;
-;Expected: string offset in rdi
-;Destroys: rbx, ?
-;Returns: ?
-;================================
+; Checks the letter after '%' and calls
+; the function according to it
+;
+; Expected: string address in rdi([rdi] = '%')
+; Destroys: rbx, rdi
+; Returns: -
+;============================================
 
 PrintSpcf:  
             inc rdi                         ; move to next sym(the one after '%')
@@ -108,7 +114,8 @@ PrintSpcf:
 
         caseB:
             call PushArg
-            call PrintBinary
+            mov byte [num_system_flag], 0d
+            call PrintBixOctHex
             jmp EndPrintSpcf
 
         caseC:
@@ -128,7 +135,8 @@ PrintSpcf:
 
         caseO:
             call PushArg
-            call PrintOctal
+            mov byte [num_system_flag], 1d
+            call PrintBixOctHex
             jmp EndPrintSpcf
         
         caseS:
@@ -138,7 +146,8 @@ PrintSpcf:
 
         caseX:
             call PushArg
-            call PrintHex
+            mov byte [num_system_flag], 2d
+            call PrintBixOctHex
             jmp EndPrintSpcf
 
         caseNoSpcf:
@@ -148,17 +157,20 @@ PrintSpcf:
             ret 
 
 ;================================
-;ErrAndExit
+; ErrAndExit
+; 
+; Displays error message and ends
+; the programm
 ;
-;Expected: -
-;Destroys: rax, rdi, rsi, rdx
-;Returns: -
+; Expected: -
+; Destroys: rax, rdi, rsi, rdx
+; Returns: -
 ;================================
 
 ErrAndExit:
         mov rax, 0x01                       ; write (rdi, rsi, rdx)
         mov rdi, 1                          ; stdout
-        mov rsi, InvalidSpcf                ; error message offset
+        mov rsi, InvalidSpcf                ; error message address
         mov rdx, InvalidSpcfLen             ; error messsage length
         syscall                             ; call kernel
 
@@ -174,13 +186,16 @@ ErrAndExit:
 
         ret
 
-;================================
-;PushArg
+;=====================================
+; PushArg
 ;
-;Expected: -
-;Destroys: rax
-;Returns: -
-;================================
+; Finds the arg according to system v
+; ABI and pushes it to stack
+; 
+; Expected: args counter in r12
+; Destroys: rax
+; Returns: -
+;====================================
 
 PushArg:
             pop rax                         ; save return address
@@ -217,11 +232,15 @@ PushArg:
             ret  
 
 ;======================================
-;PrintDecimal
+; PrintDecimal
 ;
-;Expected: arg on the top of the stack
-;Destroys: rbx, rax
-;Returns: -
+; Converts the argument from the top of
+; the stack to decimal and stores it in
+; OutputBuff
+; 
+; Expected: arg on the top of the stack
+; Destroys: rbx, rax
+; Returns: -
 ;======================================
 
 PrintDecimal:
@@ -268,7 +287,7 @@ PrintDecimal:
 
             add rax, '0'                    ; convert result to ascii
             mov [SymBuff], al               ; store it to the buffer
-            mov rdi, SymBuff                ; put the offset to rdi
+            mov rdi, SymBuff                ; put the address to rdi
 
             call StoreSym
 
@@ -293,94 +312,26 @@ PrintDecimal:
             push rbx                        ; restore return address
             ret
 
-
-;======================================
-;PrintOctal
+;==========================================
+; PrintDecimal
 ;
-;Expected: arg on the top of the stack
-;Destroys: rbx, rax
-;Returns: -
-;======================================
-
-PrintOctal:
-            pop rbx                         ; save return address
-
-            pop rax                         ; get octal number
-            push rdi                        ; save string position
-            push rcx                        ; save the counter
-            push rsi                        ; save reg value
-
-            xor rsi, rsi                    ; to use as a flag
-
-            push rax                        ; save rax
-            shr rax, 63d                    ; leave only the first bit             
-            cmp rax, 0                      ; check null bit
-            je .NullFirstBit
-            mov rsi, 1                      ; if non-zero bit -> set flag
-
-            add rax, '0'                    ; convert to ascii
-            mov [SymBuff], al               ; store sym in buffer
-            mov rdi, SymBuff                ; put offset to rdi
-
-            call StoreSym
-
-        .NullFirstBit:
-            pop rax                         ; restore rax
-            shl rax, 1                      ; move to next bits                     
-
-            mov rcx, 21d                    ; num of 3-bit(= one octal num) combinations in a reg(without the first bit)
-
-        .PrintThreeBits:                    
-            push rax                        ; store the octal value
-            shr rax, 61d                    ; leave only 3 bits
-
-            cmp rax, 0                      ; check null bit
-            je .NullBit
-            mov rsi, 1
-            jmp .PrintOctNum
-
-        .NullBit:
-            cmp rsi, 0
-            je .SkipNumPrint
-            
-        .PrintOctNum:
-            add rax, '0'
-            mov [SymBuff], al
-            mov rdi, SymBuff
-
-            call StoreSym
-        
-        .SkipNumPrint:
-            pop rax
-            shl rax, 3d                     ; move to next 3 bits
-
-        loop .PrintThreeBits
-
-            pop rsi                         ; restore reg value
-            pop rcx                         ; restore the counter
-            dec rcx                         ; for loop in MyPrintf
-            pop rdi                         ; restore string position
-            push rbx                        ; restore return address
-
-            ret
-
-;======================================
-;PrintString
-;
-;Expected: arg on the top of the stack
-;Destroys: rbx, rax
-;Returns: -
-;======================================
+; Takes the string address from the top of
+; the stack and stores it in OutputBuff
+; 
+; Expected: arg on the top of the stack
+; Destroys: rbx, rax
+; Returns: -
+;==========================================
 
 PrintString:
             pop rbx                         ; save return address
 
-            pop rax                         ; get argument string offset
+            pop rax                         ; get argument string address
             push rcx                        ; save the counter(for loop in MyPrintf)
             push rdx                        ; save reg value        
-            push rdi                        ; save main string offset
+            push rdi                        ; save main string address
 
-            mov rdi, rax                    ; move string offset to rdi
+            mov rdi, rax                    ; move string address to rdi
 
             call CalcLength                 ; the length is in rax
             mov qword [string_flag], 1      ; set the flag
@@ -395,67 +346,130 @@ PrintString:
             push rbx                        ; restore return address
             ret
 
-;======================================
-;PrintHex
+;=========================================
+; PrintBixOctHex
 ;
-;Expected: arg on the top of the stack
-;Destroys: rbx, rax
-;Returns: -
-;======================================
+; Checks the num_system_flag, converts
+; the argument from the top of the stack
+; according to it and stores it in
+; OutputBuff
+; 
+; Expected: arg on the top of the stack
+; Destroys: rbx, rax
+; Returns: -
+;=========================================
 
-PrintHex:  
+PrintBixOctHex:
+            
             pop rbx                         ; save return address
+            pop rax                         ; get the number
+            push rbx                        ; restore the ret address
 
-            pop rax                         ; get the hex value
-            push rdi                        ; save string position
             push rcx                        ; save the counter
-            push rdx                        
+            push rdi                        ; save string position
+            push rsi                        ; will be used as a flag(for null bits)
+            push rdx                        ; will be used for storing num_system_flag
+            push r12                        ; will be used for storing a const value
 
-            xor rdx, rdx                    ; to use as a flag
-            mov rcx, 16d                    ; num of 4-bit(= one hex num) combinations in a reg
+            xor rbx, rbx                    
+            xor rsi, rsi
+            
+            mov bl, [num_system_flag]       
+            cmp rbx, 1
+            jne .NoBitSkip                  ; if not octal -> no first bit check
 
-        .PrintHexNum:
-            push rax
-            shr rax, 8 * 7d + 4d            ; leave only 4 bits
+            shl rax, 1d                           
+            jnc .NoBitSkip
+            mov rsi, 1                      ; if non-zero bit -> set flag
+
+            add rax, '0'                    ; convert to ascii
+            mov [SymBuff], al               ; store sym in buffer
+            mov rdi, SymBuff                ; put address to rdi
+
+            call StoreSym
+
+        .NoBitSkip: 
+            cmp rbx, 0                      ; check num_system_flag
+            je .Binary                      ; 0 is for binary
+            cmp rbx, 1                  
+            je .Octal                       ; 1 is for octal
+            jmp .Hex                       
+
+        .Binary:    
+            mov rdx, 1d                     ; = bit shift size
+            mov rcx, 64d                    ; = places in one num
+            jmp .PrintNum
+
+        .Octal:
+            mov rdx, 3d                     ; = bit shift size
+            mov rcx, 21d                    ; = places in one num
+            jmp .PrintNum
+
+        .Hex:
+            mov rdx, 4d                     ; = bit shift size
+            mov rcx, 16d                    ; = places in one num
+        
+        .PrintNum:
+            mov r12, 64d                    ; = 8 bytes
+
+            push rax                        ; save rax value
+
+            sub r12, rdx                    ; r12 = 64d - rdx
+            push rcx                        ; save rcx value(can only use cl for bit shift)
+            mov cl, r12b
+            shr rax, cl                     ; leave only _ bits
+            pop rcx                         ; restore rcx value
+
             cmp rax, 0                      ; check null bit
             je .NullBit
-            mov rdx, 1
+            mov rsi, 1                      ; set the flag
 
         .NullBit:
-            cmp rdx, 0
+            cmp rsi, 0                      ; check the flag
             je .SkipPrint
 
-            cmp rax, 9d
+            cmp rax, 9d                     ; check if letter
             jg .IsLetter
-            add rax, '0'
-            jmp .StoreHexNum
+            add rax, '0'                    ; convert num to ascii
+            jmp .StoreNum
 
         .IsLetter:
-            add rax, 'A' - 0Ah
-        .StoreHexNum:
-            mov [SymBuff], al
+            add rax, 'A' - 0Ah              ; convert letter to ascii
+        .StoreNum:
+            mov [SymBuff], al               ; store sym in buffer
             mov rdi, SymBuff
 
             call StoreSym
 
         .SkipPrint:
-            pop rax
-            shl rax, 4d
-        loop .PrintHexNum
+            pop rax                         ; restore rax value
 
-            pop rdx
+            push rcx                        ; save rcx value(can only use cl for bit shift)
+            mov cl, dl                      ; rdx = bit shift each cycle
+            shl rax, cl
+            pop rcx                         ; restore rcx value
+
+        loop .PrintNum
+
+            pop r12                         ; restore r12 value
+            pop rdx                         ; restore rdx value
+            pop rsi                         ; restore rsi value
+            pop rdi                         ; restore string position
             pop rcx                         ; restore the counter
             dec rcx                         ; for loop in MyPrintf
-            pop rdi                         ; restore string position
-            push rbx                        ; restore return address
+
             ret
 
 ;======================================
-;PrintChar
+; PrintChar
 ;
-;Expected: arg on the top of the stack
-;Destroys: rbx, rax
-;Returns: -
+; Converts the argument from the top of
+; the stack to char and stores it in
+; OutputBuff
+; 
+; Expected: arg on the top of the stack
+; Destroys: rbx, rax
+; Returns: -
 ;======================================
 
 PrintChar:
@@ -464,7 +478,7 @@ PrintChar:
             push rdi                        ; save string position
 
             mov [SymBuff], al               ; store sym to buff
-            mov rdi, SymBuff                ; move buffer offset to rdi
+            mov rdi, SymBuff                ; move buffer address to rdi
 
             call StoreSym
 
@@ -474,59 +488,15 @@ PrintChar:
             push rbx                        ; restore the return address
             ret
 
-;=====================================
-;PrintBinary
+;==========================================
+; OutpTheRest
 ;
-;Expected: string offset in rdi
-;          arg on the top of the stack
-;Destroys: rbx, rax
-;Returns:  -
-;=====================================
-
-PrintBinary:
-            pop rbx                         ; save the ret address
-
-            pop rax                         ; get the binary number
-            push rbx                        ; restore the ret address
-            push rcx                        ; save the counter
-            push rdi                        ; save string position
-            xor rbx, rbx                    ; will be used as flag
-
-            mov rcx, 64d                    ; num of bits in 8 bytes
-            
-        .PrintOneBit:
-            shl rax, 1
-            jnc .IsZero
-
-            mov byte [SymBuff], '1'
-            mov rbx, 1                      
-            jmp .BitIsSet           
-
-        .IsZero:
-            cmp rbx, 0                      ; if there wasn't '1' before, no '0' printing
-            je .SkipPrint
-            mov byte [SymBuff], '0'         ; put the ASCII to memory  
-
-        .BitIsSet:                       
-            mov rdi, SymBuff
-
-            call StoreSym
-
-        .SkipPrint:
-        loop .PrintOneBit
-
-            pop rdi                         ; restore string position
-            pop rcx                         ; restore the counter
-            dec rcx                         ; for loop in MyPrintf
-            ret
-
-;========================================
-;OutpTheRest
-;
-;Expected: num of symbols to print in r13
-;Destroys: -
-;Returns:  -
-;========================================
+; Displays remaining symbols in OutputBuff
+; 
+; Expected: num of symbols to print in r13
+; Destroys: -
+; Returns:  -
+;==========================================
 
 OutpTheRest:
             push rcx                        ; save the counter
@@ -535,7 +505,7 @@ OutpTheRest:
             push rdx                        ; save the arg
             push rax
 
-            mov rsi, OutputBuff             ; offset of the string
+            mov rsi, OutputBuff             ; address of the string
             mov rax, 0x01                   ; write (rbx, rcx, rdx)
             mov rdi, 1                      ; stdout
             mov rdx, r13                    ; size
@@ -549,13 +519,19 @@ OutpTheRest:
 
             ret
 
-;========================================
-;StoreSym
+;=====================================================
+; StoreSym
 ;
-;Expected: string flag set
-;Destroys: -
-;Returns:  -
-;========================================
+; Stores the symbol(or the whole line if the
+; argument is string) to OutputBuff. Displays
+; the buffer if it's full.
+; 
+; Expected: string flag set if needed
+;           sym/string address in rdi
+;           string length in rax if the arg is string
+; Destroys: -
+; Returns:  -
+;=====================================================
 
 StoreSym:
             push rax                        ; save reg value
@@ -580,7 +556,7 @@ StoreSym:
             push rdi                        ; save regs values                   
             push rcx
 
-            mov rsi, OutputBuff             ; offset of the string 
+            mov rsi, OutputBuff             ; address of the string 
             mov rax, 0x01                   ; write 
             mov rdi, 1                      ; stdout
             mov rdx, OutBuffSize            ; size
@@ -603,20 +579,24 @@ StoreSym:
             pop rdi                         ; restore the arg
             pop rcx                         ; restore the counter
             pop rax                         ; restore reg value
+
             ret
         
 section     .data
 
-String:      db "Hello world abc %s %d %o %b %c %x %c", 0h 
-SymBuff:     db 0                           ; reserve 1 byte
-OutBuffSize  equ 10d
-OutputBuff:  db OutBuffSize dup(0)
+String:             db "Hello world abc %s %d %o %b %c %x %c", 0h 
+TestString:         db "TestString123", 0h
+
+SymBuff:            db 0 
+
+OutBuffSize:        equ 10d
+OutputBuff:         db OutBuffSize dup(0)
   
-TestString:  db "TestString123", 0h
-TestBuff:    dq 0
-string_flag: db 0
-InvalidSpcf: db 0Ah, "Invalid specifier!", 0Ah, 0h
-InvalidSpcfLen equ $ - InvalidSpcf
+string_flag:        db 0
+num_system_flag:    db 0
+
+InvalidSpcf:        db 0Ah, "Invalid specifier!", 0Ah, 0h
+InvalidSpcfLen:     equ $ - InvalidSpcf
 
 ArgSwitch:
     dq case2
